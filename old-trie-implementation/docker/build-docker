@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# cd into the directory containing this script (from the bash faq 028)
+if [[ $BASH_SOURCE = */* ]]; then
+  cd -- "${BASH_SOURCE%/*}/" || exit
+fi
+
+cd ..
+docker build --platform=linux/amd64 $* -t ${PRAC_DOCKER_PREFIX}prac -f docker/Dockerfile .
+ 

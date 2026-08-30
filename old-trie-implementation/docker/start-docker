@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# The SYS_NICE capability allows you to use numactl to pin processes to
+# NUMA nodes and/or individual cores
+
+# Bind-mount the host source tree so edits are visible inside containers
+HOST_ROOT="$(cd .. && pwd)"
+MOUNT_ARG="-v ${HOST_ROOT}:/root/prac"
+
+docker run --platform=linux/amd64 -d --cap-add SYS_NICE --rm ${MOUNT_ARG} --name ${PRAC_DOCKER_PREFIX}prac_p0 -h ${PRAC_DOCKER_PREFIX}prac_p0 -t ${PRAC_DOCKER_PREFIX}prac
+docker run --platform=linux/amd64 -d --cap-add SYS_NICE --rm ${MOUNT_ARG} --name ${PRAC_DOCKER_PREFIX}prac_p1 -h ${PRAC_DOCKER_PREFIX}prac_p1 -t ${PRAC_DOCKER_PREFIX}prac
+docker run --platform=linux/amd64 -d --cap-add SYS_NICE --rm ${MOUNT_ARG} --name ${PRAC_DOCKER_PREFIX}prac_p2 -h ${PRAC_DOCKER_PREFIX}prac_p2 -t ${PRAC_DOCKER_PREFIX}prac
+echo "All dockers launched"
