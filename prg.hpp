@@ -34,6 +34,15 @@ struct Block128 {
         return *this;
     }
 
+    // Overloaded bitwise AND for DUORAM masked updates
+    Block128 operator&(const Block128& other) const {
+        return Block128(_mm_and_si128(data, other.data));
+    }
+    Block128& operator&=(const Block128& other) {
+        data = _mm_and_si128(data, other.data);
+        return *this;
+    }
+
     // Equality operators, verifying all 16 bytes match exactly
     bool operator==(const Block128& other) const {
         __m128i cmp = _mm_cmpeq_epi8(data, other.data);
