@@ -46,12 +46,12 @@ Open a third terminal window and connect the client to both servers. You must pr
 ### 3. Interactive Commands
 Once the client connects, you can execute the following commands obliviously:
 
-*   **`insert <sequence>`**
+<!-- *   **`insert <sequence>`**
     *   Inserts a DNA string into the oblivious trie.
     *   *Example:* `insert ATCG`
 *   **`search <sequence>`**
     *   Checks if a DNA string exists in the trie. Completely padded to hide failure depth.
-    *   *Example:* `search ATCG`
+    *   *Example:* `search ATCG` -->
 *   **`write <index> <char>`**
     *   Low-level command. Writes a single DNA character (`A`, `T`, `C`, `G`) to a specific flat array index using the DUORAM 2-phase protocol.
     *   *Example:* `write 500 C`
