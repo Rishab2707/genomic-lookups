@@ -46,9 +46,6 @@ inline void write_key(tcp::socket& socket, const DPFKey& key) {
         bools[2 * i + 1] = key.t_cw_R[i];
     }
     boost::asio::write(socket, boost::asio::buffer(bools.data(), bools.size()));
-    
-    // Send the final correction word for the payload
-    write_block(socket, key.final_cw);
 }
 
 // Reads a serialized DPFKey from the socket
@@ -80,7 +77,4 @@ inline void read_key(tcp::socket& socket, DPFKey& key) {
         key.t_cw_L[i] = bools[2 * i];
         key.t_cw_R[i] = bools[2 * i + 1];
     }
-    
-    // Read the final correction word
-    read_block(socket, key.final_cw);
 }

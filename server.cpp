@@ -77,10 +77,12 @@ private:
                     std::cout << "[Server] Received ONLINE update (shift Delta=" << delta << ")..." << std::endl;
                     
                     size_t n = db_.size();
-                    // Circularly shift the offline buffer by Delta, bitwise AND with V, and XOR into DB.
+                    // Circularly shift the offline boolean buffer by Delta, conditionally injecting V into DB.
                     for (size_t j = 0; j < n; ++j) {
                         size_t src_idx = (j >= delta) ? (j - delta) : (j + n - delta);
-                        db_[j] ^= (offline_buffer_[src_idx] & V);
+                        if (offline_buffer_[src_idx]) {
+                            db_[j] ^= V;
+                        }
                     }
                     
                     // Consume the buffer (randomness can only be used once)
@@ -97,7 +99,7 @@ private:
 
     tcp::acceptor acceptor_;
     std::vector<Block128> db_; // The XOR-shared database
-    std::vector<Block128> offline_buffer_; // Holds the DPF randomness
+    std::vector<bool> offline_buffer_; // Holds the Leafless DPF boolean randomness
 };
 
 int main(int argc, char* argv[]) {

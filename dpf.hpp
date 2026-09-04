@@ -18,33 +18,31 @@ struct DPFKey {
     std::vector<Block128> cw;      // Correction Words for each level of the tree
     std::vector<bool> t_cw_L;      // Left correction flag bits for each level
     std::vector<bool> t_cw_R;      // Right correction flag bits for each level
-    Block128 final_cw;             // The final correction word that applies the secret payload
 };
 
 class DPF {
 public:
-    // Generates a pair of keys (Key0 and Key1) for a specific target index (alpha).
-    // The keys are generated such that when evaluated, they yield XOR shares of 'payload' 
-    // at the target index, and 0 everywhere else.
+    // Generates a pair of Leafless keys (Key0 and Key1) for a specific target index (alpha).
+    // The keys are generated such that when evaluated, their control bits yield XOR shares 
+    // of a one-hot basis vector e_alpha (1 at the target index, and 0 everywhere else).
     // @param target_index The secret index (alpha) the DPF points to.
     // @param depth The depth of the tree (log2 of the total database size).
     // @param key0 The generated key for Party 0.
     // @param key1 The generated key for Party 1.
-    // @param payload The 128-bit value to place at the target index (e.g., 1 for standard PIR).
-    static void generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1, Block128 payload);
+    static void generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1);
 
-    // Completely evaluates the DPF tree for all 2^depth possible indices.
-    // This is typically used by servers to expand the key into a full vector.
+    // Completely evaluates the Leafless DPF tree for all 2^depth possible indices.
+    // Expands the key into a vector of boolean XOR shares of the one-hot vector.
     // @param key The DPF key to evaluate.
     // @param depth The depth of the tree.
-    // @return A vector of 128-bit blocks representing the expanded XOR shares.
-    static std::vector<Block128> evaluate_full(const DPFKey& key, size_t depth);
+    // @return A vector of boolean flags representing the expanded XOR shares.
+    static std::vector<bool> evaluate_full(const DPFKey& key, size_t depth);
     
     // Evaluates the DPF key at a single specific index.
     // Useful for debugging or for sparse tree evaluation without expanding the whole tree.
     // @param key The DPF key to evaluate.
     // @param depth The depth of the tree.
     // @param index The index to evaluate at.
-    // @return The evaluated 128-bit block share.
-    static Block128 evaluate_at(const DPFKey& key, size_t depth, size_t index);
+    // @return The evaluated boolean share at index.
+    static bool evaluate_at(const DPFKey& key, size_t depth, size_t index);
 };

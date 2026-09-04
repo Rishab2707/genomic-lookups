@@ -9,7 +9,7 @@
 #include <random>
 #include <iostream>
 
-void DPF::generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1, Block128 payload) {
+void DPF::generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1) {
     PRG prg;
     
     // Secure random generation for the initial seeds
@@ -56,7 +56,6 @@ void DPF::generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1
         bool keep_right = (target_index >> (depth - 1 - i)) & 1;
         
         // 'keep' variables follow the target path; 'lose' variables follow the off-path
-        // s_keep_0 and s_keep_1 are not strictly needed since we update s0 and s1 directly below
         Block128 s_lose_0 = keep_right ? s0_L : s0_R;
         Block128 s_lose_1 = keep_right ? s1_L : s1_R;
         
@@ -100,16 +99,11 @@ void DPF::generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1
         t1 = keep_right ? t1_R : t1_L;
     }
     
-    // The final correction word places the desired payload precisely at the target index
-    Block128 final_cw = payload ^ s0 ^ s1;
-    key0.final_cw = final_cw;
-    key1.final_cw = final_cw;
+    // In Leafless DPF, no terminal correction word (final_cw) is created.
+    // The control bits t_0 and t_1 at the final depth already form XOR shares of e_alpha.
 }
 
-std::vector<Block128> DPF::evaluate_full(const DPFKey& key, size_t depth) {
-    size_t size = 1ULL << depth;
-    std::vector<Block128> out(size);
-    
+std::vector<bool> DPF::evaluate_full(const DPFKey& key, size_t depth) {
     PRG prg;
     
     // Initialize the root level with the starting seed and control bit
@@ -145,19 +139,11 @@ std::vector<Block128> DPF::evaluate_full(const DPFKey& key, size_t depth) {
         t_prev = std::move(t_next);
     }
     
-    // In the final layer, conditionally apply the final payload correction word
-    for (size_t j = 0; j < size; ++j) {
-        if (t_prev[j]) {
-            out[j] = s_prev[j] ^ key.final_cw;
-        } else {
-            out[j] = s_prev[j];
-        }
-    }
-    
-    return out;
+    // The terminal control bits (t_prev) are the XOR secret shares of the one-hot basis vector e_r
+    return t_prev;
 }
 
-Block128 DPF::evaluate_at(const DPFKey& key, size_t depth, size_t index) {
+bool DPF::evaluate_at(const DPFKey& key, size_t depth, size_t index) {
     PRG prg;
     Block128 s = key.seed;
     bool t = (key.party_id == 1);
@@ -180,8 +166,5 @@ Block128 DPF::evaluate_at(const DPFKey& key, size_t depth, size_t index) {
         t = child_t;
     }
     
-    if (t) {
-        return s ^ key.final_cw;
-    }
-    return s;
+    return t;
 }

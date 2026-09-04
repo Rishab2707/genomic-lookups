@@ -3,7 +3,8 @@
 This repository contains a high-performance, 2-party Distributed Point Function (DPF) system implemented in modern C++. It is specifically designed to store and query DNA sequences (A, T, C, G) completely obliviously using an Implicit Complete Trie architecture.
 
 ## Architectural Highlights
-*   **DUORAM Offline/Online Shifting:** Implements the DUORAM 2-phase bandwidth-saving technique. The client secretly pre-computes shared randomness on the servers (offline phase) and executes a lightning-fast circular shift ($\Delta$) to apply the masked XOR update (online phase).
+*   **Leafless DPF (Payload-Free DPF) & 128x Memory Savings:** Implements payload-free DPFs where the terminal correction word is eliminated. The servers evaluate compact boolean flags (`std::vector<bool>`) representing XOR shares of the standard basis vector $e_r$, reducing the offline buffer footprint from 16 bytes per block to just 1 bit per block (**128x memory reduction**).
+*   **DUORAM Offline/Online Shifting:** The client pre-computes shared randomness on the servers (offline phase) and executes a circular shift ($\Delta$) to conditionally inject the 128-bit masked update (online phase).
 *   **Oblivious Implicit Complete Trie:** Sequences are mapped mathematically to array indices (`4 * parent + char`), eliminating the need for complex pointer-chasing and incremental DPFs.
 *   **High-Density Packing:** DNA characters are 1-hot encoded into 4-bit nibbles, allowing 32 characters to be densely packed into every 128-bit block, massively shrinking the required DPF tree depth.
 *   **Access Pattern Padding:** Search and Insert operations execute an exact, fixed number of DPF operations regardless of early failures, guaranteeing zero side-channel leaks.
@@ -20,7 +21,13 @@ Clone the repository and compile it using the provided Makefile:
 ```bash
 make
 ```
-This will produce two executables: `server` and `client`.
+This produces three executables: `server`, `client`, and `test_leafless`.
+
+### Running Verification Tests
+To run the automated mathematical verification of the Leafless DPF and online cyclic shift:
+```bash
+./test_leafless
+```
 
 ## Usage
 
@@ -46,12 +53,12 @@ Open a third terminal window and connect the client to both servers. You must pr
 ### 3. Interactive Commands
 Once the client connects, you can execute the following commands obliviously:
 
-<!-- *   **`insert <sequence>`**
+*   **`insert <sequence>`**
     *   Inserts a DNA string into the oblivious trie.
     *   *Example:* `insert ATCG`
 *   **`search <sequence>`**
     *   Checks if a DNA string exists in the trie. Completely padded to hide failure depth.
-    *   *Example:* `search ATCG` -->
+    *   *Example:* `search ATCG`
 *   **`write <index> <char>`**
     *   Low-level command. Writes a single DNA character (`A`, `T`, `C`, `G`) to a specific flat array index using the DUORAM 2-phase protocol.
     *   *Example:* `write 500 C`

@@ -61,9 +61,8 @@ uint64_t oblivious_read_internal(tcp::socket& s0, tcp::socket& s1, size_t index)
 void oblivious_write_internal(tcp::socket& s0, tcp::socket& s1, size_t index, uint64_t target_bits, size_t db_blocks, size_t block_depth) {
     // 1. OFFLINE PHASE (Client acts as Dealer)
     size_t r_block_index = rand() % db_blocks;
-    Block128 all_ones(~0ULL, ~0ULL); // 128-bit mask of all 1s
     DPFKey k0, k1;
-    DPF::generate(r_block_index, block_depth, k0, k1, all_ones);
+    DPF::generate(r_block_index, block_depth, k0, k1);
     
     uint8_t cmd_off = 1;
     boost::asio::write(s0, boost::asio::buffer(&cmd_off, 1));
