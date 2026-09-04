@@ -3,8 +3,10 @@
 This repository contains a high-performance, 2-party Distributed Point Function (DPF) system implemented in modern C++. It is specifically designed to store and query DNA sequences (A, T, C, G) completely obliviously using an Implicit Complete Trie architecture.
 
 ## Architectural Highlights
-*   **Leafless DPF (Payload-Free DPF) & 128x Memory Savings:** Implements payload-free DPFs where the terminal correction word is eliminated. The servers evaluate compact boolean flags (`std::vector<bool>`) representing XOR shares of the standard basis vector $e_r$, reducing the offline buffer footprint from 16 bytes per block to just 1 bit per block (**128x memory reduction**).
-*   **DUORAM Offline/Online Shifting:** The client pre-computes shared randomness on the servers (offline phase) and executes a circular shift ($\Delta$) to conditionally inject the 128-bit masked update (online phase).
+*   **Pre-computed Cryptographic Pooling (Producer-Consumer):** Strictly decouples heavy offline DPF generation from the $\mathcal{O}(1)$ online execution phase. A background producer daemon continuously streams Leafless DPF keys to the servers' queues. The secret random index $r$ is **never** transmitted over the network; the online phase sends strictly the public offset $c = (target - r) \pmod N$ and masked payload $V$.
+*   **Dual-Channel Network Separation:** Uses dedicated offline sockets for key streaming and dedicated online sockets for interactive queries, eliminating Head-of-Line (HoL) blocking on the network.
+*   **Server Offline Pre-Expansion:** Servers expand incoming Leafless DPF keys into compact boolean vectors (`std::vector<bool>`) during background receipt, making online write execution purely $\mathcal{O}(1)$ CPU time.
+*   **Leafless DPF (Payload-Free DPF) & 128x Memory Savings:** Implements payload-free DPFs without terminal correction words, reducing the offline buffer footprint from 16 bytes per block to just 1 bit per block (**128x memory reduction**).
 *   **Oblivious Implicit Complete Trie:** Sequences are mapped mathematically to array indices (`4 * parent + char`), eliminating the need for complex pointer-chasing and incremental DPFs.
 *   **High-Density Packing:** DNA characters are 1-hot encoded into 4-bit nibbles, allowing 32 characters to be densely packed into every 128-bit block, massively shrinking the required DPF tree depth.
 *   **Access Pattern Padding:** Search and Insert operations execute an exact, fixed number of DPF operations regardless of early failures, guaranteeing zero side-channel leaks.
@@ -21,13 +23,7 @@ Clone the repository and compile it using the provided Makefile:
 ```bash
 make
 ```
-This produces three executables: `server`, `client`, and `test_leafless`.
-
-### Running Verification Tests
-To run the automated mathematical verification of the Leafless DPF and online cyclic shift:
-```bash
-./test_leafless
-```
+This produces two executables: `server` and `client`.
 
 ## Usage
 

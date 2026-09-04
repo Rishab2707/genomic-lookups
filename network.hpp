@@ -12,6 +12,24 @@
 
 using boost::asio::ip::tcp;
 
+// Connection role handshake (sent as first byte upon TCP connect)
+constexpr uint8_t ROLE_OFFLINE = 1; // Dedicated to streaming precomputed DPF keys
+constexpr uint8_t ROLE_ONLINE  = 2; // Dedicated to interactive reads and O(1) writes
+
+// Online command IDs
+constexpr uint8_t CMD_READ         = 0;
+constexpr uint8_t CMD_ONLINE_WRITE = 2;
+
+// Writes a 64-bit unsigned integer to the socket
+inline void write_uint64(tcp::socket& socket, uint64_t val) {
+    boost::asio::write(socket, boost::asio::buffer(&val, sizeof(val)));
+}
+
+// Reads a 64-bit unsigned integer from the socket
+inline void read_uint64(tcp::socket& socket, uint64_t& val) {
+    boost::asio::read(socket, boost::asio::buffer(&val, sizeof(val)));
+}
+
 // Writes a single 128-bit block to the socket
 inline void write_block(tcp::socket& socket, const Block128& block) {
     boost::asio::write(socket, boost::asio::buffer(&block.data, sizeof(__m128i)));
