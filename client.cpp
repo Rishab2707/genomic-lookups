@@ -9,6 +9,7 @@
 #include <string>
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <thread>
 #include <atomic>
 #include <boost/asio.hpp>
@@ -17,6 +18,37 @@
 #include "pool.hpp"
 
 using boost::asio::ip::tcp;
+
+/**
+ * @brief Computes the maximum DNA sequence length that fits within the database.
+ * 
+ * In an implicit complete 4-ary trie, inserting a DNA sequence of length L navigates 
+ * through nodes according to: next_idx = 4 * curr + char_idx, where char_idx in {1, 2, 3, 4}.
+ * The maximum node index reached at depth L is:
+ *   max_idx(L) = sum_{k=1}^L 4^k = (4^(L+1) - 4) / 3.
+ * For all sequences of length L to fit within the database, max_idx(L) must be < total_chars.
+ * 
+ * @param total_chars The total character capacity of the database.
+ * @return The maximum supported DNA sequence length.
+ */
+[[nodiscard]] constexpr size_t compute_max_dna_length(size_t total_chars) noexcept {
+    size_t max_len = 0;
+    uint64_t max_idx = 0;
+    while (true) {
+        // Prevent uint64 overflow when calculating next_max_idx = 4 * max_idx + 4
+        if (max_idx > (std::numeric_limits<uint64_t>::max() - 4) / 4) {
+            break;
+        }
+        uint64_t next_max_idx = 4 * max_idx + 4;
+        if (next_max_idx < total_chars) {
+            max_idx = next_max_idx;
+            ++max_len;
+        } else {
+            break;
+        }
+    }
+    return max_len;
+}
 
 // Maps a character to its 1-hot 4-bit representation
 uint64_t char_to_bits(char c) {
@@ -175,6 +207,7 @@ int main(int argc, char* argv[]) {
         size_t total_chars = 1ULL << std::atoi(argv[5]);
         size_t db_blocks = std::max(size_t(1), total_chars / 32);
         size_t block_depth = __builtin_ctzll(db_blocks); // log2 of blocks
+        size_t max_seq_len = compute_max_dna_length(total_chars);
         
         // 1. Establish Offline streaming sockets
         tcp::socket socket0_off(io_context);
@@ -198,6 +231,7 @@ int main(int argc, char* argv[]) {
         
         std::cout << "Connected to both servers (Offline & Online channels separated).\n";
         std::cout << "Database holds " << total_chars << " characters (" << db_blocks << " blocks).\n";
+        std::cout << "Max DNA sequence length for 4-ary trie insertion: " << max_seq_len << " characters.\n";
         
         // 3. Start the Offline Producer Factory background thread
         ThreadSafeQueue<ClientPoolItem> client_offline_pool(100);
@@ -216,7 +250,8 @@ int main(int argc, char* argv[]) {
         );
         
         std::cout << "Pre-computed Cryptographic Pooling daemon started in background.\n";
-        std::cout << "Available commands: write <index> <char>, read <index>, insert <seq>, search <seq>, exit\n";
+        std::cout << "Available commands: write <index> <char>, read <index>, insert <seq> (max length: " 
+                  << max_seq_len << "), search <seq>, help, exit\n";
         
         while (true) {
             std::cout << "> ";
@@ -245,6 +280,19 @@ int main(int argc, char* argv[]) {
                 std::string seq;
                 std::cin >> seq;
                 
+                if (seq.empty()) {
+                    std::cout << "Error: DNA sequence cannot be empty.\n";
+                    continue;
+                }
+                
+                if (seq.length() > max_seq_len) {
+                    std::cout << "Error: Sequence length (" << seq.length() 
+                              << ") exceeds maximum insertable length (" 
+                              << max_seq_len << ") for DB capacity " 
+                              << total_chars << " characters.\n";
+                    continue;
+                }
+                
                 size_t curr = 0; // root index
                 for (char c : seq) {
                     uint64_t val = char_to_bits(c);
@@ -267,6 +315,17 @@ int main(int argc, char* argv[]) {
             } else if (cmd == "search") {
                 std::string seq;
                 std::cin >> seq;
+                
+                if (seq.empty()) {
+                    std::cout << "Error: DNA sequence cannot be empty.\n";
+                    continue;
+                }
+                
+                if (seq.length() > max_seq_len) {
+                    std::cout << "Sequence " << seq << " NOT FOUND (length " << seq.length() 
+                              << " exceeds maximum supported length of " << max_seq_len << ").\n";
+                    continue;
+                }
                 
                 size_t curr = 0;
                 bool found = true;
@@ -295,8 +354,11 @@ int main(int argc, char* argv[]) {
                 if (found) std::cout << "Sequence " << seq << " FOUND in trie.\n";
                 else std::cout << "Sequence " << seq << " NOT FOUND.\n";
                 
+            } else if (cmd == "help") {
+                std::cout << "Available commands: write <index> <char>, read <index>, insert <seq> (max length: " 
+                          << max_seq_len << "), search <seq>, help, exit\n";
             } else {
-                std::cout << "Unknown command.\n";
+                std::cout << "Unknown command. Type 'help' for available commands.\n";
             }
         }
         
