@@ -15,6 +15,7 @@ using boost::asio::ip::tcp;
 // Connection role handshake (sent as first byte upon TCP connect)
 constexpr uint8_t ROLE_OFFLINE = 1; // Dedicated to streaming precomputed DPF keys
 constexpr uint8_t ROLE_ONLINE  = 2; // Dedicated to interactive reads and O(1) writes
+constexpr uint8_t ROLE_PEER    = 3; // Dedicated inter-server communication channel
 
 // Online command IDs
 constexpr uint8_t CMD_READ         = 0;
@@ -38,6 +39,25 @@ inline void write_block(tcp::socket& socket, const Block128& block) {
 // Reads a single 128-bit block from the socket
 inline void read_block(tcp::socket& socket, Block128& block) {
     boost::asio::read(socket, boost::asio::buffer(&block.data, sizeof(__m128i)));
+}
+
+// Writes an array of 128-bit blocks to the socket
+inline void write_blocks(tcp::socket& socket, const std::vector<Block128>& blocks) {
+    uint64_t count = blocks.size();
+    write_uint64(socket, count);
+    if (count > 0) {
+        boost::asio::write(socket, boost::asio::buffer(blocks.data(), count * sizeof(Block128)));
+    }
+}
+
+// Reads an array of 128-bit blocks from the socket
+inline void read_blocks(tcp::socket& socket, std::vector<Block128>& blocks) {
+    uint64_t count = 0;
+    read_uint64(socket, count);
+    blocks.resize(count);
+    if (count > 0) {
+        boost::asio::read(socket, boost::asio::buffer(blocks.data(), count * sizeof(Block128)));
+    }
 }
 
 // Serializes a full DPFKey and writes it to the socket
