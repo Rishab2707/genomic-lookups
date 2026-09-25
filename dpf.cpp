@@ -8,6 +8,122 @@
 #include "dpf.hpp"
 #include <random>
 #include <iostream>
+#include <stdexcept>
+#include <limits>
+
+namespace {
+    Block128 random_block() {
+        std::random_device rd;
+        auto random_word = [&rd]() {
+            return (uint64_t(rd()) << 32) | uint64_t(rd());
+        };
+        return Block128(random_word(), random_word());
+    }
+
+    Block128 bit_mask(bool bit) {
+        return bit ? Block128(UINT64_MAX, UINT64_MAX) : Block128{};
+    }
+}
+
+DPFKey DPF::generate_shared(
+    int party_id, uint64_t target_share, size_t depth,
+    const std::function<Block128(const Block128&, const Block128&)>& secure_and,
+    const std::function<Block128(const Block128&)>& exchange_block,
+    const std::function<bool(bool)>& exchange_xor_bit) {
+    if (party_id != 0 && party_id != 1) {
+        throw std::invalid_argument("DPF party_id must be 0 or 1");
+    }
+    if (depth >= 64 || (depth == 0 ? target_share != 0
+                                   : target_share >= (uint64_t{1} << depth))) {
+        throw std::invalid_argument("DPF target share is outside the supported domain");
+    }
+    if (depth >= std::numeric_limits<size_t>::digits) {
+        throw std::invalid_argument("DPF depth exceeds the local address space");
+    }
+    if (!secure_and || !exchange_block || !exchange_xor_bit) {
+        throw std::invalid_argument("DPF joint-generation callbacks must be provided");
+    }
+
+    DPFKey key;
+    key.party_id = party_id;
+    key.seed = random_block();
+    key.seed.set_lsb(party_id != 0);
+    key.cw.resize(depth);
+    key.t_cw_L.resize(depth);
+    key.t_cw_R.resize(depth);
+
+    PRG prg;
+    std::vector<Block128> seeds{key.seed};
+    std::vector<uint8_t> controls{static_cast<uint8_t>(party_id != 0)};
+
+    for (size_t level = 0; level < depth; ++level) {
+        const bool target_bit_share =
+            ((target_share >> (depth - level - 1)) & 1U) != 0;
+
+        std::vector<Block128> left_children(seeds.size());
+        std::vector<Block128> right_children(seeds.size());
+        std::vector<uint8_t> left_flags(seeds.size());
+        std::vector<uint8_t> right_flags(seeds.size());
+        Block128 left_sum, right_sum;
+        bool left_flag_sum = false;
+        bool right_flag_sum = false;
+        for (size_t i = 0; i < seeds.size(); ++i) {
+            Block128 left, right;
+            prg.expand(seeds[i], left, right);
+            left_flags[i] = static_cast<uint8_t>(left.lsb());
+            right_flags[i] = static_cast<uint8_t>(right.lsb());
+            left_flag_sum ^= left_flags[i] != 0;
+            right_flag_sum ^= right_flags[i] != 0;
+            left.set_lsb(false);
+            right.set_lsb(false);
+            left_children[i] = left;
+            right_children[i] = right;
+            left_sum ^= left;
+            right_sum ^= right;
+        }
+
+        // The target bit is shared between P0/P1. For the second product,
+        // P0 contributes the public one in the XOR sharing of 1 ^ target.
+        const Block128 target_mask = bit_mask(target_bit_share);
+        const Block128 not_target_mask = bit_mask(target_bit_share ^ (party_id == 0));
+        const Block128 left_product = secure_and(target_mask, left_sum);
+        const Block128 right_product = secure_and(not_target_mask, right_sum);
+        const Block128 cw_share = left_product ^ right_product;
+        const Block128 cw = exchange_block(cw_share);
+
+        // Correction flags follow the BGI DPF construction. The left bit is
+        // complemented once globally; the right bit is not.
+        const bool local_left_cw = left_flag_sum ^ target_bit_share;
+        const bool local_right_cw = right_flag_sum ^ target_bit_share;
+        const bool cw_left = exchange_xor_bit(local_left_cw) ^ true;
+        const bool cw_right = exchange_xor_bit(local_right_cw);
+        key.cw[level] = cw;
+        key.t_cw_L[level] = cw_left;
+        key.t_cw_R[level] = cw_right;
+
+        std::vector<Block128> next_seeds(seeds.size() * 2);
+        std::vector<uint8_t> next_controls(seeds.size() * 2);
+        for (size_t i = 0; i < seeds.size(); ++i) {
+            Block128 left = left_children[i];
+            Block128 right = right_children[i];
+            bool left_flag = left_flags[i] != 0;
+            bool right_flag = right_flags[i] != 0;
+            if (controls[i] != 0) {
+                left ^= cw;
+                right ^= cw;
+                left_flag ^= cw_left;
+                right_flag ^= cw_right;
+            }
+            next_seeds[2 * i] = left;
+            next_seeds[2 * i + 1] = right;
+            next_controls[2 * i] = static_cast<uint8_t>(left_flag);
+            next_controls[2 * i + 1] = static_cast<uint8_t>(right_flag);
+        }
+        seeds = std::move(next_seeds);
+        controls = std::move(next_controls);
+    }
+    return key;
+}
 
 void DPF::generate(size_t target_index, size_t depth, DPFKey& key0, DPFKey& key1) {
     PRG prg;
@@ -141,6 +257,47 @@ std::vector<bool> DPF::evaluate_full(const DPFKey& key, size_t depth) {
     
     // The terminal control bits (t_prev) are the XOR secret shares of the one-hot basis vector e_r
     return t_prev;
+}
+
+DpfEvaluation DPF::evaluate_full_values(const DPFKey& key, size_t depth) {
+    PRG prg;
+    std::vector<Block128> seeds{key.seed};
+    std::vector<uint8_t> flags{static_cast<uint8_t>(key.party_id == 1)};
+
+    for (size_t level = 0; level < depth; ++level) {
+        const size_t child_count = size_t{1} << (level + 1);
+        std::vector<Block128> next_seeds(child_count);
+        std::vector<uint8_t> next_flags(child_count);
+
+        for (size_t node = 0; node < seeds.size(); ++node) {
+            Block128 left, right;
+            prg.expand(seeds[node], left, right);
+            bool left_flag = left.lsb();
+            bool right_flag = right.lsb();
+            left.set_lsb(false);
+            right.set_lsb(false);
+
+            if (flags[node] != 0) {
+                left ^= key.cw[level];
+                right ^= key.cw[level];
+                left_flag ^= key.t_cw_L[level];
+                right_flag ^= key.t_cw_R[level];
+            }
+
+            next_seeds[2 * node] = left;
+            next_seeds[2 * node + 1] = right;
+            next_flags[2 * node] = static_cast<uint8_t>(left_flag);
+            next_flags[2 * node + 1] = static_cast<uint8_t>(right_flag);
+        }
+        seeds = std::move(next_seeds);
+        flags = std::move(next_flags);
+    }
+
+    Block128 final_correction;
+    for (const auto& value : seeds) {
+        final_correction ^= value;
+    }
+    return {std::move(flags), std::move(seeds), final_correction};
 }
 
 bool DPF::evaluate_at(const DPFKey& key, size_t depth, size_t index) {

@@ -9,17 +9,26 @@
 #include <boost/asio.hpp>
 #include <vector>
 #include "dpf.hpp"
+#include "duoram_protocol.hpp"
 
 using boost::asio::ip::tcp;
 
 // Connection role handshake (sent as first byte upon TCP connect)
-constexpr uint8_t ROLE_OFFLINE = 1; // Dedicated to streaming precomputed DPF keys
+constexpr uint8_t ROLE_OFFLINE = 1; // Dedicated to streaming precomputed DPF keys from Dealer
 constexpr uint8_t ROLE_ONLINE  = 2; // Dedicated to interactive reads and O(1) writes
 constexpr uint8_t ROLE_PEER    = 3; // Dedicated inter-server communication channel
+constexpr uint8_t ROLE_INIT    = 4; // One-shot startup exchange of blinded database arrays (F0, F1)
+constexpr uint8_t ROLE_HELPER0 = 5; // Persistent online channel from P0 to helper P2
+constexpr uint8_t ROLE_HELPER1 = 6; // Persistent online channel from P1 to helper P2
+constexpr uint8_t ROLE_PREPROCESS_PEER = 7; // P0/P1 joint DPF generation channel
 
 // Online command IDs
 constexpr uint8_t CMD_READ         = 0;
 constexpr uint8_t CMD_ONLINE_WRITE = 2;
+
+// Commands on the persistent P0/P1-to-P2 helper channels.
+constexpr uint8_t CMD_HELPER_READ = 1;
+constexpr uint8_t CMD_HELPER_UPDATE = 2;
 
 // Writes a 64-bit unsigned integer to the socket
 inline void write_uint64(tcp::socket& socket, uint64_t val) {
@@ -39,6 +48,21 @@ inline void write_block(tcp::socket& socket, const Block128& block) {
 // Reads a single 128-bit block from the socket
 inline void read_block(tcp::socket& socket, Block128& block) {
     boost::asio::read(socket, boost::asio::buffer(&block.data, sizeof(__m128i)));
+}
+
+// Serializes one XOR Beaver AND-triple share used by the joint DPF generator.
+inline void write_and_triple(tcp::socket& socket,
+                             const duoram::BeaverAndTripleShare& triple) {
+    write_block(socket, triple.x);
+    write_block(socket, triple.y);
+    write_block(socket, triple.z);
+}
+
+inline void read_and_triple(tcp::socket& socket,
+                            duoram::BeaverAndTripleShare& triple) {
+    read_block(socket, triple.x);
+    read_block(socket, triple.y);
+    read_block(socket, triple.z);
 }
 
 // Writes an array of 128-bit blocks to the socket

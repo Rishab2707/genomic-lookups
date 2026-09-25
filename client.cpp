@@ -58,8 +58,8 @@ using boost::asio::ip::tcp;
 // Maps a character to its 1-hot 4-bit representation
 [[nodiscard]] uint64_t char_to_bits(char c) noexcept {
     if (c == 'A' || c == 'a') return 1; // 0001
-    if (c == 'T' || c == 't') return 2; // 0010
-    if (c == 'C' || c == 'c') return 4; // 0100
+    if (c == 'C' || c == 'c') return 2; // 0010
+    if (c == 'T' || c == 't') return 4; // 0100
     if (c == 'G' || c == 'g') return 8; // 1000
     return 0;                           // 0000 (NULL or empty)
 }
@@ -67,15 +67,22 @@ using boost::asio::ip::tcp;
 // Maps 4 bits back to the DNA character
 [[nodiscard]] char bits_to_char(uint64_t b) noexcept {
     if (b == 1) return 'A';
-    if (b == 2) return 'T';
-    if (b == 4) return 'C';
+    if (b == 2) return 'C';
+    if (b == 4) return 'T';
     if (b == 8) return 'G';
     return 'N'; // NULL
 }
 
 namespace {
-    // Thread-safe random device for generating uniform XOR shares of target indices
-    std::mt19937_64 g_rng(std::random_device{}());
+    // Secret shares must come from an OS-backed source, not a simulation PRNG.
+    std::random_device g_rng;
+
+    Block128 random_block() {
+        auto random_word = []() {
+            return (uint64_t(g_rng()) << 32) | uint64_t(g_rng());
+        };
+        return Block128(random_word(), random_word());
+    }
 }
 
 /**
@@ -145,7 +152,11 @@ void oblivious_write_internal(tcp::socket& s0_on, tcp::socket& s1_on,
     } else {
         p_high = diff_bits << (bit_shift - 64);
     }
-    Block128 V(p_high, p_low);
+    const Block128 V(p_high, p_low);
+    // The database is XOR shared: each server receives an independent share
+    // and their XOR equals the one-hot genomic nibble delta.
+    const Block128 V0 = random_block();
+    const Block128 V1 = V ^ V0;
 
     // 3. Generate uniform XOR shares: t0 in [0, db_blocks - 1], t1 = t ^ t0
     std::uniform_int_distribution<uint64_t> dist(0, db_blocks - 1);
@@ -157,11 +168,11 @@ void oblivious_write_internal(tcp::socket& s0_on, tcp::socket& s1_on,
 
     boost::asio::write(s0_on, boost::asio::buffer(&cmd_on, 1));
     write_uint64(s0_on, t0);
-    write_block(s0_on, V);
+    write_block(s0_on, V0);
 
     boost::asio::write(s1_on, boost::asio::buffer(&cmd_on, 1));
     write_uint64(s1_on, t1);
-    write_block(s1_on, V);
+    write_block(s1_on, V1);
 
     // 5. Await ACKs from both servers
     uint8_t ack0 = 0, ack1 = 0;
